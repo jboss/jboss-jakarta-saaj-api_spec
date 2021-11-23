@@ -10,7 +10,10 @@
 
 package jakarta.xml.soap;
 
+import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.nio.file.Files;
@@ -18,6 +21,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
+import java.security.PrivilegedActionException;
+import java.security.PrivilegedExceptionAction;
 import java.util.Iterator;
 import java.util.Properties;
 import java.util.logging.ConsoleHandler;
@@ -26,9 +31,8 @@ import java.util.logging.Logger;
 
 
 class FactoryFinder {
-
     private static final Logger logger;
-
+    private static final String JBOSS_SAAJ_IMPL_MODULE = "org.jboss.ws.saaj-impl";
     private static final ServiceLoaderUtil.ExceptionHandler<SOAPException> EXCEPTION_HANDLER =
             new ServiceLoaderUtil.ExceptionHandler<SOAPException>() {
                 @Override
@@ -108,6 +112,66 @@ class FactoryFinder {
                 EXCEPTION_HANDLER);
         if (factory != null) {
             return factory;
+        }
+        String serviceId = "META-INF/services/" + factoryId;
+        ClassLoader moduleClassLoader = null;
+        try {
+            final Class<?> moduleClass = Class.forName("org.jboss.modules.Module");
+            final Class<?> moduleIdentifierClass = Class.forName("org.jboss.modules.ModuleIdentifier");
+            final Class<?> moduleLoaderClass = Class.forName("org.jboss.modules.ModuleLoader");
+            final SecurityManager sm = System.getSecurityManager();
+            Object moduleLoader = null;
+            if (sm != null) {
+                moduleLoader = AccessController.doPrivileged(new PrivilegedExceptionAction<Object>() {
+                    public Object run() throws Exception {
+                        return moduleClass.getMethod("getBootModuleLoader").invoke(null);
+                    }
+                });
+            } else {
+                moduleLoader = moduleClass.getMethod("getBootModuleLoader").invoke(null);
+            }
+            Object moduleIdentifier = moduleIdentifierClass.getMethod("create", String.class).invoke(null, JBOSS_SAAJ_IMPL_MODULE);
+            final Object module = moduleLoaderClass.getMethod("loadModule", moduleIdentifierClass).invoke(moduleLoader, moduleIdentifier);
+            if (sm != null) {
+                try {
+                    moduleClassLoader = AccessController.doPrivileged(new PrivilegedExceptionAction<ClassLoader>() {
+                        @Override
+                        public ClassLoader run() throws Exception {
+                            return (ClassLoader) moduleClass.getMethod("getClassLoader").invoke(module);
+                        }
+                    });
+                } catch (PrivilegedActionException pae) {
+                    throw pae.getException();
+                }
+            } else {
+                moduleClassLoader = (ClassLoader) moduleClass.getMethod("getClassLoader").invoke(module);
+            }
+        } catch (ClassNotFoundException e) {
+            //ignore, JBoss Modules might not be available at all
+        } catch (Exception e) {
+            throw new SOAPException(e);
+        }
+        if (moduleClassLoader != null) {
+            try {
+                InputStream is = moduleClassLoader.getResourceAsStream(serviceId);
+
+                if( is!=null ) {
+                    BufferedReader rd =
+                            new BufferedReader(new InputStreamReader(is, "UTF-8"));
+
+                    String factoryClassName = rd.readLine();
+                    rd.close();
+
+                    if (factoryClassName != null &&
+                            ! "".equals(factoryClassName)) {
+                        Object result = newInstance(factoryClassName, defaultClassName, moduleClassLoader);
+                        if (result != null) {
+                            return (T) result;
+                        }
+                    }
+                }
+            } catch( Exception ex ) {
+            }
         }
 
         // handling Glassfish/OSGi (platform specific default)
