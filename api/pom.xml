@@ -327,13 +327,16 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <addDefaultEntries>false</addDefaultEntries>
+                            <addDefaultSpecificationEntries>false</addDefaultSpecificationEntries>
                         </manifest>
+                        <manifestEntries>
+                            <Automatic-Module-Name>jakarta.xml.soap</Automatic-Module-Name>
+                        </manifestEntries>
                     </archive>
                     <niceManifest>true</niceManifest>
                     <instructions>
                         <Bundle-Version>${spec.bundle.version}</Bundle-Version>
-                        <Bundle-SymbolicName>${spec.bundle.symbolic-name}</Bundle-SymbolicName>
+                        <Bundle-SymbolicName>org.jboss.spec.jakarta.xml.soap.jboss-saaj-api_3.0_spec</Bundle-SymbolicName>
                         <Extension-Name>${spec.extension.name}</Extension-Name>
                         <Implementation-Version>${spec.implementation.version}</Implementation-Version>
                         <Specification-Version>${spec.specification.version}</Specification-Version>
